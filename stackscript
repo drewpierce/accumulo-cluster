@@ -1,0 +1,209 @@
+#!/bin/bash
+
+source setup.sh
+
+##########
+# Before this script is called have your system do:
+#
+# apt-get -y install git
+# git clone https://github.com/medined/accumulo_stackscript.git
+
+if [ ! -f sysctl.conf ];
+then
+  echo "PLEASE USE git clone to get the whole project from github."
+  exit
+fi
+
+echo "- START ------------"
+date +"%Y/%m/%d %H:%M:%S"
+
+##########
+# Setup environment variables when a user logs in.
+cp $CDIR/login_startup.sh /etc/profile.d
+source /etc/profile.d/login_startup.sh
+
+# Store the host key fingerprint to avoid a question when
+# using SSH for the first time.
+result=`grep "ssh-dss" /etc/ssh/ssh_known_hosts | wc -l`
+if [ "$result" == "0" ];
+then
+  ssh-keyscan -t dsa localhost >> /etc/ssh/ssh_known_hosts
+  ssh-keyscan -t dsa `hostname -f` >> /etc/ssh/ssh_known_hosts
+  ssh-keyscan -t dsa `hostname` >> /etc/ssh/ssh_known_hosts
+fi
+result=`grep "ssh-rsa" /etc/ssh/ssh_known_hosts | wc -l`
+if [ "$result" == "0" ];
+then
+  ssh-keyscan -t rsa localhost >> /etc/ssh/ssh_known_hosts
+  ssh-keyscan -t rsa `hostname -f` >> /etc/ssh/ssh_known_hosts
+  ssh-keyscan -t rsa `hostname` >> /etc/ssh/ssh_known_hosts
+fi
+
+##########
+# Update the sysctl file to set swappiness. And set it for the current session.
+echo "SYSCTL.CONF: Setting swappiness to 10"
+echo "SYSCTL.CONF: Disabling IPV6"
+cp $CDIR/sysctl.conf /etc/sysctl.conf
+sysctl vm.swappiness=10
+
+##########
+# Create groups and users
+add_a_user accumulo
+add_a_user hadoop
+add_a_user zookeeper
+
+##########
+# Create a supergroup group and put the accumulo user in it so that
+# the Accumulo monitor page can access the Namenode information.
+result=`getent group supergroup | grep supergroup | wc -l`
+if [ "$result" == "0" ];
+then
+  addgroup supergroup
+  adduser accumulo supergroup
+fi
+
+##########
+# Setup the firewall (allow the hadoop, job tracker, and accumulo web pages)
+cp $CDIR/iptables.firewall.rules /etc/iptables.firewall.rules
+cp $CDIR/firewall /etc/network/if-pre-up.d/firewall
+iptables-restore < /etc/iptables.firewall.rules
+
+# setup a source for maven3 which is required by Accumulo.
+echo "deb http://ppa.launchpad.net/natecarlson/maven3/ubuntu precise main" >> /etc/apt/sources.list
+echo "deb-src http://ppa.launchpad.net/natecarlson/maven3/ubuntu precise main" >> /etc/apt/sources.list
+apt-get update
+
+apt-get -y install curl maven2 openssh-server openssh-client
+apt-get -y install openjdk-6-jdk subversion screen g++ make
+apt-get -y --force-yes install maven3
+
+# remove the symbolic link to maven2. You can still access it via /usr/share/maven2/bin/mvn
+rm /usr/bin/mvn
+ln -s /usr/share/maven3/bin/mvn /usr/bin/mvn
+
+#apt-get -y fail2bin
+echo "Installed packages"
+
+# install and configure hadoop 
+if [ ! -f /usr/local/$HADOOP_VERSION/conf/core-site.xml ];
+then
+  cd /usr/local
+  tar xfz $CDIR/$HADOOP_VERSION.tar.gz
+  chown -R hadoop:hadoop /usr/local/$HADOOP_VERSION
+  rm -f /usr/local/hadoop
+  ln -s $HADOOP_VERSION hadoop
+  cp $CDIR/core-site.xml /usr/local/hadoop/conf/core-site.xml
+  cp $CDIR/hdfs-site.xml /usr/local/hadoop/conf/hdfs-site.xml
+  cp $CDIR/mapred-site.xml /usr/local/hadoop/conf/mapred-site.xml
+  cp $CDIR/hadoop-env.sh /usr/local/hadoop/conf/hadoop-env.sh
+  # Update master and slaves with the hostname
+  hostname -f > /usr/local/hadoop/conf/masters
+  hostname -f > /usr/local/hadoop/conf/slaves
+  sed -i "s/localhost/`hostname -f`/" /usr/local/hadoop/conf/core-site.xml
+  sed -i "s/localhost/`hostname -f`/" /usr/local/hadoop/conf/mapred-site.xml
+fi
+
+# Create the hadoop temp directory. It should not be in the /tmp directory because that directory
+# disappears after each system restart. Something that is done a lot with virtual machines.
+mkdir -p /hadoop_tmp_dir
+chmod 755 /hadoop_tmp_dir
+chown hadoop:hadoop /hadoop_tmp_dir
+
+##########
+# format hadoop, if needed
+if [ ! -d /hadoop_tmp_dir/dfs/name ];
+then
+  su hadoop -c "/usr/local/hadoop/bin/hadoop namenode -format"
+fi
+
+##########
+# If hadoop is not running, then format the namenode and start hadoop.
+result=`ps faux | grep "org.apache.hadoop.hdfs.server.namenode.NameNode" | wc -l`
+if [ "$result" != "2" ];
+then
+  su hadoop -c "/usr/local/hadoop/bin/start-dfs.sh"
+  su hadoop -c "/usr/local/hadoop/bin/start-mapred.sh"
+fi
+
+echo "Installed Hadoop"
+
+# install and configure zookeeper
+if [ ! -f /usr/local/zookeeper-3.4.3/conf/zoo.cfg ];
+then
+  cd /usr/local
+  tar xfz $CDIR/zookeeper-3.4.3.tar.gz
+  cp $CDIR/zoo.cfg /usr/local/zookeeper-3.4.3/conf/zoo.cfg
+  chown -R zookeeper:zookeeper /usr/local/zookeeper-3.4.3
+  ln -s /usr/local/zookeeper-3.4.3 /usr/local/zookeeper
+  mkdir -p /zookeeper_tmp_dir
+  chmod 777 /zookeeper_tmp_dir
+  chown zookeeper:zookeeper /zookeeper_tmp_dir
+fi
+
+# start zookeeper
+result=`ps faux | grep "org.apache.zookeeper.server.quorum.QuorumPeerMain" | wc -l`
+if [ "$result" != "2" ];
+then
+  su zookeeper -c "cd /usr/local/zookeeper; ./bin/zkServer.sh start"
+fi
+
+echo "Installed Zookeeper"
+
+##########
+# Create an hadoop user directory if needed.
+result=`su hadoop -c "/usr/local/hadoop/bin/hadoop fs -ls /user | grep accumulo | wc -l"`
+if [ "$result" == "0" ];
+then
+  su hadoop -c "/usr/local/hadoop/bin/hadoop fs -mkdir /user/accumulo"
+  su hadoop -c "/usr/local/hadoop/bin/hadoop fs -chown accumulo /user/accumulo"
+fi
+
+su accumulo -c "mkdir -p /home/accumulo/workspace/accumulo"
+su accumulo -c "svn co https://svn.apache.org/repos/asf/accumulo/trunk /home/accumulo/workspace/accumulo"
+echo "Cloned accumulo"
+
+su accumulo -c "cd /home/accumulo/workspace/accumulo; mvn -Dmaven.test.skip=true package -P assemble"
+echo "Compiled accumulo"
+
+# Make the lib/ext directory group writeable so that you can deply jar files there.
+cd /usr/local
+tar xfz /home/accumulo/workspace/accumulo/assemble/target/apache-accumulo-1.6.0-SNAPSHOT-dist.tar.gz
+
+# Compile the native libraries
+cd /usr/local/apache-accumulo-1.6.0-SNAPSHOT/server/src/main/c++
+make
+echo "Compiled navtive library"
+
+chown -R accumulo:accumulo /usr/local/apache-accumulo-1.6.0-SNAPSHOT
+# remove symbolic link and then create it.
+rm -f /usr/local/accumulo
+ln -s /usr/local/apache-accumulo-1.6.0-SNAPSHOT /usr/local/accumulo
+
+su accumulo -c "mkdir -p /usr/local/accumulo/lib/ext"
+su accumulo -c "mkdir -p /usr/local/accumulo/logs"
+su accumulo -c "mkdir -p /usr/local/accumulo/walogs"
+
+echo "Created ext, logs, and walogs directory."
+
+# Make the lib/ext directory group writeable so that you can deply jar files there.
+chmod g+w /usr/local/accumulo/lib/ext
+cp /usr/local/accumulo/conf/examples/512MB/standalone/* /usr/local/accumulo/conf
+cp $CDIR/accumulo-site.xml /usr/local/accumulo/conf/accumulo-site.xml
+cp $CDIR/accumulo-env.sh /usr/local/accumulo/conf/accumulo-env.sh
+hostname -f > /usr/local/accumulo/conf/gc
+hostname -f > /usr/local/accumulo/conf/masters
+hostname -f > /usr/local/accumulo/conf/monitor
+hostname -f > /usr/local/accumulo/conf/slaves
+hostname -f > /usr/local/accumulo/conf/tracers
+
+########
+
+echo "initializing accumulo"
+su accumulo -c "/usr/local/hadoop/bin/hadoop fs -rmr /user/accumulo/accumulo 2>/dev/null"
+su accumulo -c "/usr/local/accumulo/bin/accumulo init --clear-instance-name --instance-name instance --username root --password secret"
+
+echo "starting accumulo"
+su accumulo -c "/usr/local/accumulo/bin/start-all.sh"
+
+date +"%Y/%m/%d %H:%M:%S"
+echo "- END ------------"
