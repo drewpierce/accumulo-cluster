@@ -13,6 +13,25 @@ source setup.sh
 # cd /root
 # git clone https://github.com/drewpierce/accumulo-cluster.git
 
+echo "Available commands below"
+echo "---------------------------------------------------------------------"
+echo "  master   - Full config of hadoop and accumulo with start of servers"
+echo "  masterwo - Full config of hadoop and accumulo WITHOUT start of servers"
+echo "  slavewo  - Full config of hadoop and accumulo WITHOUT start of servers"
+echo "---------------------------------------------------------------------"
+echo -n "Enter command : "
+read mycommand
+mycommand="$(echo ${mycommand} | tr 'A-Z' 'a-z')"
+if [ "$mycommand" == "master" ] || [ "$mycommand" == "masterwo" ] || [ "$mycommand" == "slave" ]; then
+   echo "something will be done"
+else
+   echo "invalid command"
+   exit
+fi
+echo "--- Begin ---"
+echo "--- Under Development, exiting ---"
+exit
+
 if [ ! -f sysctl.conf ];
 then
   echo "PLEASE USE git clone to get the whole project from github."
