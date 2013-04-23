@@ -6,7 +6,12 @@ source setup.sh
 # Before this script is called have your system do:
 #
 # apt-get -y install git
-# git clone https://github.com/medined/accumulo_stackscript.git
+# apt-get update
+# apt-get install openjdk-6-jdk
+# ****** verify that JAVA_HOME can be set to /usr/lib/jvm/java-6-openjdk-amd64
+# ****** which it will in a few of these scripts
+# cd /root
+# git clone https://github.com/drewpierce/accumulo-cluster.git
 
 if [ ! -f sysctl.conf ];
 then
@@ -74,7 +79,7 @@ echo "deb-src http://ppa.launchpad.net/natecarlson/maven3/ubuntu precise main" >
 apt-get update
 
 apt-get -y install curl maven2 openssh-server openssh-client
-apt-get -y install openjdk-6-jdk subversion screen g++ make
+apt-get -y install subversion screen g++ make
 apt-get -y --force-yes install maven3
 
 # remove the symbolic link to maven2. You can still access it via /usr/share/maven2/bin/mvn
@@ -127,6 +132,8 @@ fi
 
 echo "Installed Hadoop"
 
+echo "About to install and configure zookeeper"
+
 # install and configure zookeeper
 if [ ! -f /usr/local/zookeeper-3.4.3/conf/zoo.cfg ];
 then
@@ -139,6 +146,8 @@ then
   chmod 777 /zookeeper_tmp_dir
   chown zookeeper:zookeeper /zookeeper_tmp_dir
 fi
+
+echo "About to start zookeeper"
 
 # start zookeeper
 result=`ps faux | grep "org.apache.zookeeper.server.quorum.QuorumPeerMain" | wc -l`
@@ -172,7 +181,7 @@ tar xfz /home/accumulo/workspace/accumulo/assemble/target/apache-accumulo-1.6.0-
 # Compile the native libraries
 cd /usr/local/apache-accumulo-1.6.0-SNAPSHOT/server/src/main/c++
 make
-echo "Compiled navtive library"
+echo "Compiled native library"
 
 chown -R accumulo:accumulo /usr/local/apache-accumulo-1.6.0-SNAPSHOT
 # remove symbolic link and then create it.
@@ -185,7 +194,7 @@ su accumulo -c "mkdir -p /usr/local/accumulo/walogs"
 
 echo "Created ext, logs, and walogs directory."
 
-# Make the lib/ext directory group writeable so that you can deply jar files there.
+# Make the lib/ext directory group writeable so that you can deploy jar files there.
 chmod g+w /usr/local/accumulo/lib/ext
 cp /usr/local/accumulo/conf/examples/512MB/standalone/* /usr/local/accumulo/conf
 cp $CDIR/accumulo-site.xml /usr/local/accumulo/conf/accumulo-site.xml
