@@ -30,7 +30,6 @@ else
 fi
 echo "--- Begin ---"
 echo "--- Under Development, exiting ---"
-exit
 
 if [ ! -f sysctl.conf ];
 then
@@ -38,8 +37,9 @@ then
   exit
 fi
 
-echo "- START ------------"
+echo "------------------ START ------------------"
 date +"%Y/%m/%d %H:%M:%S"
+echo "-------------------------------------------"
 
 ##########
 # Setup environment variables when a user logs in.
@@ -86,16 +86,27 @@ then
   adduser accumulo supergroup
 fi
 
+echo "------- Begin Firewall setup ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 ##########
 # Setup the firewall (allow the hadoop, job tracker, and accumulo web pages)
 cp $CDIR/iptables.firewall.rules /etc/iptables.firewall.rules
 cp $CDIR/firewall /etc/network/if-pre-up.d/firewall
 iptables-restore < /etc/iptables.firewall.rules
 
+echo "------- Begin Maven repository setup ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
+
 # setup a source for maven3 which is required by Accumulo.
 echo "deb http://ppa.launchpad.net/natecarlson/maven3/ubuntu precise main" >> /etc/apt/sources.list
 echo "deb-src http://ppa.launchpad.net/natecarlson/maven3/ubuntu precise main" >> /etc/apt/sources.list
 apt-get update
+
+echo "------- Install some packages ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 apt-get -y install curl maven2 openssh-server openssh-client
 apt-get -y install subversion screen g++ make
@@ -106,7 +117,15 @@ rm /usr/bin/mvn
 ln -s /usr/share/maven3/bin/mvn /usr/bin/mvn
 
 #apt-get -y fail2bin
-echo "Installed packages"
+
+echo "------- Install of some packages done ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
+
+
+echo "------- Install and config hadoop ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 # install and configure hadoop 
 if [ ! -f /usr/local/$HADOOP_VERSION/conf/core-site.xml ];
@@ -149,7 +168,9 @@ then
   su hadoop -c "/usr/local/hadoop/bin/start-mapred.sh"
 fi
 
-echo "Installed Hadoop"
+echo "------- Install of hadoop is done ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 echo "About to install and configure zookeeper"
 
@@ -166,7 +187,9 @@ then
   chown zookeeper:zookeeper /zookeeper_tmp_dir
 fi
 
-echo "About to start zookeeper"
+echo "------- About to start zookeeper ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 # start zookeeper
 result=`ps faux | grep "org.apache.zookeeper.server.quorum.QuorumPeerMain" | wc -l`
@@ -175,7 +198,9 @@ then
   su zookeeper -c "cd /usr/local/zookeeper; ./bin/zkServer.sh start"
 fi
 
-echo "Installed Zookeeper"
+echo "------- zookeeper complete ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 ##########
 # Create an hadoop user directory if needed.
@@ -190,17 +215,31 @@ su accumulo -c "mkdir -p /home/accumulo/workspace/accumulo"
 su accumulo -c "svn co https://svn.apache.org/repos/asf/accumulo/trunk /home/accumulo/workspace/accumulo"
 echo "Cloned accumulo"
 
+
+echo "------- Begin accumulo compile ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 su accumulo -c "cd /home/accumulo/workspace/accumulo; mvn -Dmaven.test.skip=true package -P assemble"
-echo "Compiled accumulo"
+echo "------- Done accumulo compile ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
+
 
 # Make the lib/ext directory group writeable so that you can deply jar files there.
 cd /usr/local
 tar xfz /home/accumulo/workspace/accumulo/assemble/target/apache-accumulo-1.6.0-SNAPSHOT-dist.tar.gz
 
+
+echo "------- Begin compile native libraries ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 # Compile the native libraries
 cd /usr/local/apache-accumulo-1.6.0-SNAPSHOT/server/src/main/c++
 make
-echo "Compiled native library"
+echo "------- Done compile native libraries ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
+
 
 chown -R accumulo:accumulo /usr/local/apache-accumulo-1.6.0-SNAPSHOT
 # remove symbolic link and then create it.
@@ -211,7 +250,9 @@ su accumulo -c "mkdir -p /usr/local/accumulo/lib/ext"
 su accumulo -c "mkdir -p /usr/local/accumulo/logs"
 su accumulo -c "mkdir -p /usr/local/accumulo/walogs"
 
-echo "Created ext, logs, and walogs directory."
+echo "------- Done Created ext, logs, and walogs directory ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 
 # Make the lib/ext directory group writeable so that you can deploy jar files there.
 chmod g+w /usr/local/accumulo/lib/ext
@@ -226,12 +267,17 @@ hostname -f > /usr/local/accumulo/conf/tracers
 
 ########
 
-echo "initializing accumulo"
+echo "------- Initializing accumulo ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 su accumulo -c "/usr/local/hadoop/bin/hadoop fs -rmr /user/accumulo/accumulo 2>/dev/null"
 su accumulo -c "/usr/local/accumulo/bin/accumulo init --clear-instance-name --instance-name instance --username root --password secret"
 
-echo "starting accumulo"
+echo "------- Starting accumulo ---------"
+date +"%Y/%m/%d %H:%M:%S"
+echo "--------------------------------------"
 su accumulo -c "/usr/local/accumulo/bin/start-all.sh"
 
+echo "-------------------------------------------"
 date +"%Y/%m/%d %H:%M:%S"
-echo "- END ------------"
+echo "---------------- END ----------------------"

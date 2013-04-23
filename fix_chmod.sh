@@ -1,0 +1,11 @@
+chmod 755 accumulo-env.sh
+chmod 755 clean_logs.sh
+chmod 755 kafka.sh
+chmod 755 setup.sh
+chmod 755 stackscript
+chmod 755 startup_accumulo.sh
+chmod 755 startup_kafka.sh
+chmod 755 stop-accumulo.sh
+chmod 755 stop_kafka.sh
+chmod 755 versions.sh
+chmod 755 fix_chmod.sh
